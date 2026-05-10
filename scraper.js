@@ -1,25 +1,36 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const fs = require('fs');
 const path = require('path');
 
-const REVIEWS_URL = 'https://www.google.com/search?q=New+Heating+Waalwijk+reviews&hl=nl#lrd=0x47c69197577fdafb:0xe8605f2e2ceab65c,1';
+puppeteer.use(StealthPlugin());
+
+const REVIEWS_URL = 'https://www.google.com/maps/place/New+Heating/@51.68817,5.06817,17z/data=!4m8!3m7!1s0x47c69197577fdafb:0xe8605f2e2ceab65c!8m2!3d51.68817!4d5.06817!9m1!1b1!16s%2Fg%2F11l5clprrs?hl=nl';
 
 async function scrape() {
-  console.log('Launching browser...');
+  console.log('Launching stealth browser...');
   const browser = await puppeteer.launch({
     headless: "new",
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
   });
 
   const page = await browser.newPage();
-  await page.setViewport({ width: 1280, height: 800 });
+  
+  // Set a realistic viewport and user agent
+  await page.setViewport({ width: 1280, height: 900 });
+  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
-  console.log('Navigating to Google Reviews...');
-  await page.goto(REVIEWS_URL, { waitUntil: 'networkidle2' });
+  console.log('Navigating to Google Maps Reviews...');
+  try {
+    await page.goto(REVIEWS_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+  } catch (e) {
+    console.log('Initial navigation timeout, retrying...');
+    await page.goto(REVIEWS_URL, { waitUntil: 'domcontentloaded' });
+  }
 
   // Handle Cookie Consent if it appears
   try {
-    const cookieButton = await page.$('button[aria-label="Alles accepteren"], button[aria-label="Accept all"]');
+    const cookieButton = await page.waitForSelector('button[aria-label="Alles accepteren"], button[aria-label="Accept all"]', { timeout: 5000 });
     if (cookieButton) {
       console.log('Clicking cookie consent button...');
       await cookieButton.click();
@@ -29,56 +40,47 @@ async function scrape() {
     console.log('No cookie consent button found.');
   }
 
+  // Wait for the reviews list to be visible
+  console.log('Waiting for reviews list...');
   try {
-    console.log('Attempting to sort by newest...');
-    // Use a more generic way to find the button since text can vary by language
-    await page.evaluate(() => {
-      const buttons = Array.from(document.querySelectorAll('div[role="button"], button'));
-      const newestBtn = buttons.find(b => 
-        b.innerText.toLowerCase().includes('nieuwste') || 
-        b.innerText.toLowerCase().includes('newest')
-      );
-      if (newestBtn) newestBtn.click();
-    });
-    
-    // Wait for reviews to refresh
-    await new Promise(r => setTimeout(r, 3000));
-    
-    await page.waitForSelector('.gws-localreviews__google-review', { timeout: 15000 });
+    await page.waitForSelector('.jftiS, .WMbnYc, .m6U6Mc', { timeout: 15000 });
   } catch (e) {
-    console.log('Sort button not found or reviews slow to load, proceeding with current view.');
+    console.log('Standard review selectors not found, taking screenshot for debug.');
+    await page.screenshot({ path: 'debug_view.png' });
+    console.log('Page Title at failure:', await page.title());
   }
 
   console.log('Extracting reviews...');
   const data = await page.evaluate(() => {
-    const items = Array.from(document.querySelectorAll('.gws-localreviews__google-review, .jftiS, .WMbnYc, [data-review-id]'));
-    const pageTitle = document.title;
-    const bodyTextSnippet = document.body.innerText.substring(0, 500);
+    // Selectors for Google Maps layout
+    const items = Array.from(document.querySelectorAll('.jftiS, .WMbnYc, .m6U6Mc, [data-review-id]'));
     
     const extracted = items.map(el => {
-      const author = el.querySelector('.TSUbDb, .d4r55, .XE3o9b, .XE3o9b')?.innerText || 'Anonymous';
-      const ratingText = el.querySelector('.fS74If, .kvS76c, .kvS76c, .fS74If')?.getAttribute('aria-label') || '';
-      const ratingMatch = ratingText.match(/(\d+)/);
-      const rating = ratingMatch ? parseInt(ratingMatch[1]) : 5;
-      const text = el.querySelector('.Jtu0P, .wiI7pf, .K7oB9b, .wiI7pf')?.innerText || '';
-      const date = el.querySelector('.dehbe, .rsqa9b, .f9S5nd, .rsqa9b')?.innerText || '';
-      const authorImg = el.querySelector('.lSBy9, .NBa79c, .NBa79c')?.getAttribute('src') || '';
+      const author = el.querySelector('.d4r55, .TSUbDb, .XE3o9b')?.innerText || 'Anonymous';
+      
+      // Rating extraction from stars
+      const stars = el.querySelector('.kvS76c, .fS74If')?.getAttribute('aria-label') || '';
+      const rating = parseInt(stars.match(/\d+/) || '5');
+      
+      const text = el.querySelector('.wiI7pf, .Jtu0P, .K7oB9b')?.innerText || '';
+      const date = el.querySelector('.rsqa9b, .dehbe, .f9S5nd')?.innerText || '';
+      const authorImg = el.querySelector('.NBa79c, .lSBy9')?.getAttribute('src') || '';
+      
       return { author, rating, text, date, authorImg };
     });
 
-    return { extracted, pageTitle, bodyTextSnippet, itemCount: items.length };
+    return { 
+      extracted, 
+      pageTitle: document.title,
+      itemCount: items.length
+    };
   });
 
   console.log('Page Title:', data.pageTitle);
-  console.log('Total items found by selector:', data.itemCount);
-  if (data.itemCount === 0) {
-    console.log('Debug - Body Snippet:', data.bodyTextSnippet);
-  }
+  console.log('Total items found:', data.itemCount);
 
-  const reviews = data.extracted;
-
-  // Filter for 4 and 5 star reviews ONLY
-  const filteredReviews = reviews
+  // Filter for 4 and 5 star reviews
+  const filteredReviews = data.extracted
     .filter(r => r.rating >= 4)
     .slice(0, 24);
 
