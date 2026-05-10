@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Heating - Google Reviews</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Client Testimonials</h1>
+            <p>Real reviews from our Google Business profile, updated daily.</p>
+        </header>
+
+        <div id="reviews-container" class="reviews-grid">
+            <!-- Reviews will be loaded here -->
+            <div class="loading">Loading latest reviews...</div>
+        </div>
+    </div>
+
+    <script>
+        async function loadReviews() {
+            try {
+                const response = await fetch('/reviews.json');
+                const reviews = await response.json();
+                
+                const container = document.getElementById('reviews-container');
+                container.innerHTML = '';
+
+                if (reviews.length === 0) {
+                    container.innerHTML = '<p class="error">No reviews found. The first scrape will happen soon!</p>';
+                    return;
+                }
+
+                reviews.forEach(review => {
+                    const card = document.createElement('div');
+                    card.className = 'review-card';
+                    
+                    const stars = '★'.repeat(review.rating) + '☆'.repeat(5 - review.rating);
+                    
+                    card.innerHTML = `
+                        <div class="review-header">
+                            <img src="${review.authorImg || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(review.author)}" alt="${review.author}" class="avatar">
+                            <div class="author-info">
+                                <h3>${review.author}</h3>
+                                <div class="rating">${stars}</div>
+                            </div>
+                        </div>
+                        <p class="review-text">"${review.text}"</p>
+                        <span class="review-date">${review.date}</span>
+                    `;
+                    container.appendChild(card);
+                });
+            } catch (error) {
+                console.error('Error loading reviews:', error);
+                document.getElementById('reviews-container').innerHTML = '<p class="error">Failed to load reviews. Please check back later.</p>';
+            }
+        }
+
+        loadReviews();
+    </script>
+</body>
+</html>
