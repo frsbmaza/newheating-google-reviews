@@ -15,22 +15,34 @@ async function scrape() {
   await page.setViewport({ width: 1280, height: 800 });
 
   console.log('Navigating to Google Reviews...');
-  // Updated URL to explicitly request newest first via sorting parameters if possible, 
-  // but we will also click the button to be sure.
   await page.goto(REVIEWS_URL, { waitUntil: 'networkidle2' });
 
+  // Handle Cookie Consent if it appears
   try {
-    // Try to find and click the "Nieuwste" (Newest) button if not already selected
-    const newestButtonSelector = 'div[role="button"]:contains("Nieuwste"), [data-sort-id="newestFirst"]';
+    const cookieButton = await page.$('button[aria-label="Alles accepteren"], button[aria-label="Accept all"]');
+    if (cookieButton) {
+      console.log('Clicking cookie consent button...');
+      await cookieButton.click();
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  } catch (e) {
+    console.log('No cookie consent button found.');
+  }
+
+  try {
+    console.log('Attempting to sort by newest...');
     // Use a more generic way to find the button since text can vary by language
     await page.evaluate(() => {
-      const buttons = Array.from(document.querySelectorAll('div[role="button"]'));
-      const newestBtn = buttons.find(b => b.innerText.includes('Nieuwste') || b.innerText.includes('Newest'));
+      const buttons = Array.from(document.querySelectorAll('div[role="button"], button'));
+      const newestBtn = buttons.find(b => 
+        b.innerText.toLowerCase().includes('nieuwste') || 
+        b.innerText.toLowerCase().includes('newest')
+      );
       if (newestBtn) newestBtn.click();
     });
     
     // Wait for reviews to refresh
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 3000));
     
     await page.waitForSelector('.gws-localreviews__google-review', { timeout: 15000 });
   } catch (e) {
@@ -39,17 +51,18 @@ async function scrape() {
 
   console.log('Extracting reviews...');
   const reviews = await page.evaluate(() => {
-    const items = Array.from(document.querySelectorAll('.gws-localreviews__google-review'));
+    // Try multiple selectors for reviews in case of UI changes
+    const items = Array.from(document.querySelectorAll('.gws-localreviews__google-review, .jftiS, .WMbnYc'));
     return items.map(el => {
-      const author = el.querySelector('.TSUbDb')?.innerText || 'Anonymous';
-      const ratingText = el.querySelector('.fS74If')?.getAttribute('aria-label') || '';
+      const author = el.querySelector('.TSUbDb, .d4r55, .XE3o9b')?.innerText || 'Anonymous';
+      const ratingText = el.querySelector('.fS74If, .kvS76c, .kvS76c')?.getAttribute('aria-label') || '';
       // Google's aria-label is usually like "Gerecycleerd 5 van de 5" or "5/5"
       const ratingMatch = ratingText.match(/(\d+)/);
       const rating = ratingMatch ? parseInt(ratingMatch[1]) : 5;
       
-      const text = el.querySelector('.Jtu0P')?.innerText || '';
-      const date = el.querySelector('.dehbe')?.innerText || '';
-      const authorImg = el.querySelector('.lSBy9')?.getAttribute('src') || '';
+      const text = el.querySelector('.Jtu0P, .wiI7pf, .K7oB9b')?.innerText || '';
+      const date = el.querySelector('.dehbe, .rsqa9b, .f9S5nd')?.innerText || '';
+      const authorImg = el.querySelector('.lSBy9, .NBa79c, .NBa79c')?.getAttribute('src') || '';
       
       return { author, rating, text, date, authorImg };
     });
