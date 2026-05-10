@@ -25,6 +25,8 @@ jobs:
 
       - name: Run Scraper
         run: node scraper.js
+        env:
+          SERP_API_KEY: ${{ secrets.SERP_API_KEY }}
 
       - name: Commit and Push changes
         uses: stefanzweifel/git-auto-commit-action@v4

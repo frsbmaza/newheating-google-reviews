@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 // SerpApi Configuration
-const API_KEY = process.env.SERP_API_KEY || '8e7bd3d89912f254632331ff452140430437a6a7d6b0aee26f576ff00041f07c';
+const API_KEY = process.env.SERP_API_KEY;
 const DATA_ID = '0x47c69197577fdafb:0xe8605f2e2ceab65c';
 
 async function scrape() {
