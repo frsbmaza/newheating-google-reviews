@@ -50,23 +50,32 @@ async function scrape() {
   }
 
   console.log('Extracting reviews...');
-  const reviews = await page.evaluate(() => {
-    // Try multiple selectors for reviews in case of UI changes
-    const items = Array.from(document.querySelectorAll('.gws-localreviews__google-review, .jftiS, .WMbnYc'));
-    return items.map(el => {
-      const author = el.querySelector('.TSUbDb, .d4r55, .XE3o9b')?.innerText || 'Anonymous';
-      const ratingText = el.querySelector('.fS74If, .kvS76c, .kvS76c')?.getAttribute('aria-label') || '';
-      // Google's aria-label is usually like "Gerecycleerd 5 van de 5" or "5/5"
+  const data = await page.evaluate(() => {
+    const items = Array.from(document.querySelectorAll('.gws-localreviews__google-review, .jftiS, .WMbnYc, [data-review-id]'));
+    const pageTitle = document.title;
+    const bodyTextSnippet = document.body.innerText.substring(0, 500);
+    
+    const extracted = items.map(el => {
+      const author = el.querySelector('.TSUbDb, .d4r55, .XE3o9b, .XE3o9b')?.innerText || 'Anonymous';
+      const ratingText = el.querySelector('.fS74If, .kvS76c, .kvS76c, .fS74If')?.getAttribute('aria-label') || '';
       const ratingMatch = ratingText.match(/(\d+)/);
       const rating = ratingMatch ? parseInt(ratingMatch[1]) : 5;
-      
-      const text = el.querySelector('.Jtu0P, .wiI7pf, .K7oB9b')?.innerText || '';
-      const date = el.querySelector('.dehbe, .rsqa9b, .f9S5nd')?.innerText || '';
+      const text = el.querySelector('.Jtu0P, .wiI7pf, .K7oB9b, .wiI7pf')?.innerText || '';
+      const date = el.querySelector('.dehbe, .rsqa9b, .f9S5nd, .rsqa9b')?.innerText || '';
       const authorImg = el.querySelector('.lSBy9, .NBa79c, .NBa79c')?.getAttribute('src') || '';
-      
       return { author, rating, text, date, authorImg };
     });
+
+    return { extracted, pageTitle, bodyTextSnippet, itemCount: items.length };
   });
+
+  console.log('Page Title:', data.pageTitle);
+  console.log('Total items found by selector:', data.itemCount);
+  if (data.itemCount === 0) {
+    console.log('Debug - Body Snippet:', data.bodyTextSnippet);
+  }
+
+  const reviews = data.extracted;
 
   // Filter for 4 and 5 star reviews ONLY
   const filteredReviews = reviews
